@@ -2,7 +2,7 @@
 
 An interactive web-based scientific visualisation tool for exploring radio telescope arrays and antenna distributions in real time.
 
-The application provides a NASA-style control interface for switching between major radio observatories and visualising their antenna layouts on a global map.
+The application provides a control interface for switching between major radio observatories and visualising their antenna layouts on a global map.
 
 # Features
 Interactive world map (satellite view)<br/>
