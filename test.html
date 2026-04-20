@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Radio Telescope Array Explorer</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+  body {
+    margin: 0;
+    background: #111;
+    font-family: sans-serif;
+  }
+
+  #map {
+    height: 85vh;
+    width: 100%;
+  }
+
+  /* ---------------- CONTROLS ---------------- */
+  .controls {
+    height: 15vh;
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    background: #1c1c1c;
+    padding-left: 15px;
+    gap: 10px;
+  }
+
+  button {
+    font-size: 14px;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 8px;
+    background: #333;
+    color: white;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: #555;
+  }
+
+  /* separator line */
+  .sep {
+    width: 1px;
+    height: 40px;
+    background: #555;
+    margin: 0 10px;
+  }
+
+  /* ---------------- INSET PLOT ---------------- */
+  #inset {
+    position: absolute;
+    bottom: 18vh;
+    right: 20px;
+    width: 320px;
+    height: 220px;
+    background: rgba(20,20,20,0.95);
+    border: 1px solid #444;
+    border-radius: 10px;
+    display: none;
+    z-index: 9999;
+    padding: 10px;
+  }
+
+  #inset canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* close button */
+  #closeInset {
+    position: absolute;
+    top: 6px;
+    right: 10px;
+    color: white;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+  }
+</style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<!-- INSET PLOT -->
+<div id="inset">
+  <div id="closeInset" onclick="closeInset()">×</div>
+  <canvas id="plot"></canvas>
+</div>
+
+  
+<div class="controls">
+  <div style="color:white; padding-left:15px; font-size:14px;">
+    Telescope Layout:
+  </div>
+
+  <button onclick="loadTelescope('vla')">VLA 🇺🇸</button>
+  <button onclick="loadTelescope('lofar')">LOFAR 🇳🇱</button>
+  <button onclick="loadTelescope('meerkat')">MeerKAT 🇿🇦</button>
+  <button onclick="loadTelescope('skalow')">SKA-Low 🇦🇺</button>
+  <button onclick="loadTelescope('alma')">ALMA 🇨🇱</button>
+
+  <div class="sep"></div>
+
+  <button onclick="showDensityPlot()">Density</button>
+  <button onclick="alert('TBD feature')">TBD</button>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+// ---------------- MAP ----------------
+const map = L.map('map').setView([20, 0], 3);
+
+L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { attribution: 'Tiles © Esri' }
+).addTo(map);
+
+// ---------------- GLOBAL STORAGE ----------------
+let currentLayout = [];
+let currentCenter = [0,0];
+
+// ---------------- FILE LOADERS ----------------
+async function loadPosition(file) {
+  const res = await fetch(file);
+  const text = await res.text();
+  const [lon, lat] = text.trim().split(/\s+/).map(Number);
+  return [lat, lon];
+}
+
+async function loadLayout(file) {
+  const res = await fetch(file);
+  const text = await res.text();
+
+  return text.trim().split("\n").map(line => {
+    const [x, y] = line.trim().split(/\s+/).map(Number);
+    return [x, y];
+  });
+}
+
+// ---------------- ENU ----------------
+function enuToLatLng(lat0, lon0, xEast, yNorth) {
+  const R = 6378137.0;
+
+  const latRad = lat0 * Math.PI / 180;
+  const lonRad = lon0 * Math.PI / 180;
+
+  const dLat = yNorth / R;
+  const dLon = xEast / (R * Math.cos(latRad));
+
+  return [
+    (latRad + dLat) * 180 / Math.PI,
+    (lonRad + dLon) * 180 / Math.PI
+  ];
+}
+
+// ---------------- CAMERA ----------------
+function flyTo(center, zoom, cb) {
+  map.flyTo(center, zoom, { duration: 3 });
+  setTimeout(cb, 3200);
+}
+
+// ---------------- CLEAN ----------------
+function clearAntennas() {
+  map.eachLayer(layer => {
+    if (layer instanceof L.CircleMarker) {
+      map.removeLayer(layer);
+    }
+  });
+}
+
+// ---------------- MAIN ----------------
+async function loadTelescope(name) {
+
+  clearAntennas();
+
+  const positionFile = `data/position_${name}.txt`;
+  const layoutFile = `data/layout_${name}.txt`;
+
+  const center = await loadPosition(positionFile);
+  const layout = await loadLayout(layoutFile);
+
+  currentLayout = layout;
+  currentCenter = center;
+
+  flyTo([20, 0], 2.5, () => {
+    flyTo(center, 15, () => {
+
+      for (let i = 0; i < layout.length; i++) {
+
+        const [lat, lon] = enuToLatLng(
+          center[0],
+          center[1],
+          layout[i][0],
+          layout[i][1]
+        );
+
+        L.circleMarker([lat, lon], {
+          radius: 4,
+          color: "lime",
+          fillColor: "lime",
+          fillOpacity: 1,
+          weight: 2
+        }).addTo(map);
+      }
+
+    });
+  });
+}
+
+// ---------------- DENSITY PLOT ----------------
+function showDensityPlot() {
+
+  if (!currentLayout.length) return;
+
+  const canvas = document.getElementById("plot");
+  const ctx = canvas.getContext("2d");
+
+  canvas.width = 320;
+  canvas.height = 220;
+
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // margins for axes
+  const m = { left: 45, right: 10, top: 10, bottom: 35 };
+
+  const plotW = W - m.left - m.right;
+  const plotH = H - m.top - m.bottom;
+
+  // ---------------- COMPUTE RADIAL DISTANCES ----------------
+  const radii = currentLayout.map(p =>
+    Math.sqrt(p[0]*p[0] + p[1]*p[1])
+  );
+
+  const bins = 20;
+  const maxR = Math.max(...radii);
+  const hist = new Array(bins).fill(0);
+
+  radii.forEach(r => {
+    const idx = Math.min(bins - 1, Math.floor((r / maxR) * bins));
+    hist[idx]++;
+  });
+
+  const maxCount = Math.max(...hist);
+
+  ctx.clearRect(0, 0, W, H);
+
+  // ---------------- AXES ----------------
+  ctx.strokeStyle = "#aaa";
+  ctx.lineWidth = 1;
+
+  // X axis
+  ctx.beginPath();
+  ctx.moveTo(m.left, H - m.bottom);
+  ctx.lineTo(W - m.right, H - m.bottom);
+  ctx.stroke();
+
+  // Y axis
+  ctx.beginPath();
+  ctx.moveTo(m.left, m.top);
+  ctx.lineTo(m.left, H - m.bottom);
+  ctx.stroke();
+
+  // ---------------- BARS ----------------
+  const barW = plotW / bins;
+
+  ctx.fillStyle = "lime";
+
+  for (let i = 0; i < bins; i++) {
+    const h = (hist[i] / maxCount) * plotH;
+
+    ctx.fillRect(
+      m.left + i * barW,
+      H - m.bottom - h,
+      barW - 2,
+      h
+    );
+  }
+
+  // ---------------- TICKS + LABELS ----------------
+  ctx.fillStyle = "#ccc";
+  ctx.font = "10px sans-serif";
+
+  // X-axis ticks (meters)
+  for (let i = 0; i <= 5; i++) {
+    const xVal = (i / 5) * maxR;
+    const x = m.left + (i / 5) * plotW;
+
+    ctx.fillText(
+      Math.round(xVal),
+      x - 10,
+      H - 15
+    );
+
+    ctx.beginPath();
+    ctx.moveTo(x, H - m.bottom);
+    ctx.lineTo(x, H - m.bottom + 5);
+    ctx.stroke();
+  }
+
+  // Y-axis ticks
+  for (let i = 0; i <= 5; i++) {
+    const yVal = (i / 5) * maxCount;
+    const y = H - m.bottom - (i / 5) * plotH;
+
+    ctx.fillText(
+      Math.round(yVal),
+      5,
+      y + 3
+    );
+
+    ctx.beginPath();
+    ctx.moveTo(m.left - 5, y);
+    ctx.lineTo(m.left, y);
+    ctx.stroke();
+  }
+
+  // ---------------- AXIS LABELS ----------------
+  ctx.fillStyle = "#fff";
+  ctx.font = "12px sans-serif";
+
+  // X label
+  ctx.fillText(
+    "Radius (m)",
+    W / 2 - 30,
+    H - 5
+  );
+
+  // Y label (rotated)
+  ctx.save();
+  ctx.translate(12, H / 2 + 30);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText("Number of antennas", 0, 0);
+  ctx.restore();
+
+  // show inset
+  document.getElementById("inset").style.display = "block";
+}
+
+// ---------------- CLOSE INSET ----------------
+function closeInset() {
+  document.getElementById("inset").style.display = "none";
+}
+</script>
+
+</body>
+</html>

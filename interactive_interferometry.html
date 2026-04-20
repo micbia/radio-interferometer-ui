@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Radio Interferometer Explorer</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+/* =========================
+   GLOBAL
+========================= */
+body {
+  margin: 0;
+  background: #0b0f14;
+  font-family: sans-serif;
+  overflow: hidden;
+}
+
+/* =========================
+   MAP
+========================= */
+#map {
+  height: 85vh;
+  width: 100%;
+}
+
+/* =========================
+   NASA TOOLBAR
+========================= */
+.controls {
+  height: 15vh;
+  background: linear-gradient(180deg, #0b0f14, #121a24);
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  gap: 20px;
+  color: white;
+  border-top: 1px solid #223;
+}
+
+.controls-title {
+  text-align: center;
+  font-size: 14px;
+  letter-spacing: 2px;
+  font-weight: 600;
+  color: #9fb3c8;
+  white-space: nowrap;
+  margin-right: 10px;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group-label {
+  font-size: 18px;
+  color: #6f859c;
+  letter-spacing: 1.5px;
+}
+
+.group-row {
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  font-size: 16px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #2a3a4f;
+  background: #121a24;
+  color: #d7e3f0;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+button:hover {
+  background: #1c2a3a;
+  border-color: #4aa3ff;
+  box-shadow: 0 0 8px rgba(74,163,255,0.4);
+}
+
+.toolbar-sep {
+  width: 1px;
+  height: 45px;
+  background: #2a3a4f;
+}
+
+/* =========================
+   INSET PANEL
+========================= */
+#inset {
+  position: absolute;
+  bottom: 18vh;
+  right: 20px;
+  width: 520px;
+  height: 360px;
+  background: rgba(20,20,20,0.95);
+  border: 2px solid #4aa3ff;
+  border-radius: 10px;
+  display: none;
+  z-index: 9999;
+  padding: 15px;
+}
+
+#plot {
+  width: 100%;
+  height: 100%;
+}
+
+#closeInset {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  color: white;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+#tooltip {
+  position: absolute;
+  bottom: 8px;
+  left: 10px;
+  color: #ccc;
+  font-size: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<!-- ================= INSET ================= -->
+<div id="inset">
+  <div id="closeInset" onclick="closeInset()">×</div>
+  <canvas id="plot"></canvas>
+  <div id="tooltip"></div>
+</div>
+
+<!-- ================= TOOLBAR ================= -->
+<div class="controls">
+
+  <br/><br/>
+
+  <div class="control-group">
+    <div class="group-label">OBSERVATORIES</div>
+    <div class="group-row">
+      <button onclick="loadTelescope('vla')">VLA 🇺🇸</button>
+      <button onclick="loadTelescope('lofar')">LOFAR 🇳🇱</button>
+      <button onclick="loadTelescope('meerkat')">MeerKAT 🇿🇦</button>
+      <button onclick="loadTelescope('skalow')">SKA-Low 🇦🇺</button>
+      <button onclick="loadTelescope('alma')">ALMA 🇨🇱</button>
+    </div>
+  </div>
+
+  <div class="toolbar-sep"></div>
+
+  <div class="control-group">
+    <div class="group-label">ANALYSIS</div>
+    <div class="group-row">
+      <button onclick="showDensityPlot()">📊 Density</button>
+      <button onclick="alert('TBD feature')">🧪 TBD</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+// ================= MAP =================
+const map = L.map('map').setView([20, 0], 3);
+
+L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { attribution: 'Tiles © Esri' }
+).addTo(map);
+
+// ================= STATE =================
+let currentLayout = [];
+let currentCenter = [0,0];
+
+// ================= FILE LOADERS =================
+async function loadPosition(file) {
+  const res = await fetch(file);
+  const text = await res.text();
+  const [lon, lat] = text.trim().split(/\s+/).map(Number);
+  return [lat, lon];
+}
+
+async function loadLayout(file) {
+  const res = await fetch(file);
+  const text = await res.text();
+
+  return text.trim().split("\n").map(l => {
+    const [x,y] = l.trim().split(/\s+/).map(Number);
+    return [x,y];
+  });
+}
+
+// ================= ENU =================
+function enuToLatLng(lat0, lon0, x, y) {
+  const R = 6378137;
+
+  const latRad = lat0 * Math.PI/180;
+  const lonRad = lon0 * Math.PI/180;
+
+  const dLat = y / R;
+  const dLon = x / (R * Math.cos(latRad));
+
+  return [
+    (latRad + dLat)*180/Math.PI,
+    (lonRad + dLon)*180/Math.PI
+  ];
+}
+
+// ================= CAMERA =================
+function flyTo(center, zoom, cb) {
+  map.flyTo(center, zoom, {duration:3});
+  setTimeout(cb, 3200);
+}
+
+// ================= CLEAN =================
+function clearAntennas(){
+  map.eachLayer(l=>{
+    if(l instanceof L.CircleMarker) map.removeLayer(l);
+  });
+}
+
+// ================= MAIN =================
+async function loadTelescope(name){
+
+  clearAntennas();
+
+  const pos = await loadPosition(`data/position_${name}.txt`);
+  const layout = await loadLayout(`data/layout_${name}.txt`);
+
+  currentCenter = pos;
+  currentLayout = layout;
+
+  flyTo([20,0],2.5,()=>{
+    flyTo(pos,15,()=>{
+
+      layout.forEach(p=>{
+        const [lat,lon] = enuToLatLng(pos[0],pos[1],p[0],p[1]);
+
+        L.circleMarker([lat,lon],{
+          radius:4,
+          color:"lime",
+          fillColor:"lime",
+          fillOpacity:1,
+          weight:2
+        }).addTo(map);
+      });
+
+    });
+  });
+}
+
+// ================= DENSITY PLOT =================
+function showDensityPlot(){
+
+  const c = document.getElementById("plot");
+  const ctx = c.getContext("2d");
+
+  const W = c.width = 520;
+  const H = c.height = 320;
+
+  const radii = currentLayout.map(p =>
+    Math.sqrt(p[0]*p[0] + p[1]*p[1])
+  );
+
+  const bins = 25;
+  const maxR = Math.max(...radii);
+
+  const hist = new Array(bins).fill(0);
+
+  radii.forEach(r=>{
+    const i = Math.min(bins-1, Math.floor((r/maxR)*bins));
+    hist[i]++;
+  });
+
+  const maxC = Math.max(...hist);
+
+  ctx.clearRect(0,0,W,H);
+
+  // margins
+  const m = {l:55,r:15,t:15,b:45};
+
+  const pw = W - m.l - m.r;
+  const ph = H - m.t - m.b;
+
+  // ================= AXES =================
+  ctx.strokeStyle = "#aaa";
+  ctx.lineWidth = 1;
+
+  // X axis
+  ctx.beginPath();
+  ctx.moveTo(m.l, H - m.b);
+  ctx.lineTo(W - m.r, H - m.b);
+  ctx.stroke();
+
+  // Y axis
+  ctx.beginPath();
+  ctx.moveTo(m.l, m.t);
+  ctx.lineTo(m.l, H - m.b);
+  ctx.stroke();
+
+  // ================= BARS =================
+  ctx.fillStyle = "lime";
+  const bw = pw / bins;
+
+  hist.forEach((v,i)=>{
+    const h = (v / maxC) * ph;
+
+    ctx.fillRect(
+      m.l + i*bw,
+      H - m.b - h,
+      bw - 2,
+      h
+    );
+  });
+
+  // ================= TICKS =================
+  ctx.fillStyle = "#ccc";
+  ctx.font = "10px sans-serif";
+
+  // X ticks (radius in meters)
+  for (let i = 0; i <= 5; i++) {
+    const xVal = (i/5) * maxR;
+    const x = m.l + (i/5) * pw;
+
+    ctx.beginPath();
+    ctx.moveTo(x, H - m.b);
+    ctx.lineTo(x, H - m.b + 5);
+    ctx.strokeStyle = "#888";
+    ctx.stroke();
+
+    ctx.fillText(
+      Math.round(xVal),
+      x - 10,
+      H - m.b + 18
+    );
+  }
+
+  // Y ticks (counts)
+  for (let i = 0; i <= 5; i++) {
+    const yVal = (i/5) * maxC;
+    const y = H - m.b - (i/5) * ph;
+
+    ctx.beginPath();
+    ctx.moveTo(m.l - 8, y);
+    ctx.lineTo(m.l, y);
+    ctx.stroke();
+
+    ctx.fillText(
+      Math.round(yVal),
+      25,
+      y + 3
+    );
+  }
+
+  // ================= LABELS =================
+  ctx.fillStyle = "#fff";
+  ctx.font = "12px sans-serif";
+
+  // X label
+  ctx.fillText(
+    "Radius (m)",
+    W/2 - 40,
+    H - 5
+  );
+
+  // Y label (rotated)
+  ctx.save();
+  ctx.translate(8, H/2 + 40);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText("Number of antennas", 0, 0);
+  ctx.restore();
+
+  document.getElementById("inset").style.display = "block";
+}
+
+// ================= INSET =================
+function closeInset(){
+  document.getElementById("inset").style.display="none";
+}
+</script>
+
+</body>
+</html>
