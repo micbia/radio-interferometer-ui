@@ -5,130 +5,9 @@
 <title>Radio Interferometer Explorer</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet" href="main.css"/>
+<script src="js/app.js"></script>
 
-<style>
-/* =========================
-   GLOBAL
-========================= */
-body {
-  margin: 0;
-  background: #0b0f14;
-  font-family: sans-serif;
-  overflow: hidden;
-}
-
-/* =========================
-   MAP
-========================= */
-#map {
-  height: 85vh;
-  width: 100%;
-}
-
-/* =========================
-   NASA TOOLBAR
-========================= */
-.controls {
-  height: 15vh;
-  background: linear-gradient(180deg, #0b0f14, #121a24);
-  display: flex;
-  align-items: center;
-  padding: 10px 16px;
-  gap: 20px;
-  color: white;
-  border-top: 1px solid #223;
-}
-
-.controls-title {
-  text-align: center;
-  font-size: 14px;
-  letter-spacing: 2px;
-  font-weight: 600;
-  color: #9fb3c8;
-  white-space: nowrap;
-  margin-right: 10px;
-}
-
-.control-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.group-label {
-  font-size: 18px;
-  color: #6f859c;
-  letter-spacing: 1.5px;
-}
-
-.group-row {
-  display: flex;
-  gap: 8px;
-}
-
-button {
-  font-size: 16px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid #2a3a4f;
-  background: #121a24;
-  color: #d7e3f0;
-  cursor: pointer;
-  transition: all 0.15s ease-in-out;
-}
-
-button:hover {
-  background: #1c2a3a;
-  border-color: #4aa3ff;
-  box-shadow: 0 0 8px rgba(74,163,255,0.4);
-}
-
-.toolbar-sep {
-  width: 1px;
-  height: 45px;
-  background: #2a3a4f;
-}
-
-/* =========================
-   INSET PANEL
-========================= */
-#inset {
-  position: absolute;
-  bottom: 18vh;
-  right: 20px;
-  width: 520px;
-  height: 360px;
-  background: rgba(20,20,20,0.95);
-  border: 2px solid #4aa3ff;
-  border-radius: 10px;
-  display: none;
-  z-index: 9999;
-  padding: 15px;
-}
-
-#plot {
-  width: 100%;
-  height: 100%;
-}
-
-#closeInset {
-  position: absolute;
-  top: 6px;
-  right: 10px;
-  color: white;
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: bold;
-}
-
-#tooltip {
-  position: absolute;
-  bottom: 8px;
-  left: 10px;
-  color: #ccc;
-  font-size: 12px;
-}
-</style>
 </head>
 
 <body>
@@ -138,7 +17,15 @@ button:hover {
 <!-- ================= INSET ================= -->
 <div id="inset">
   <div id="closeInset" onclick="closeInset()">×</div>
+
   <canvas id="plot"></canvas>
+
+  <!-- INFO PANEL -->
+  <div id="infoPanel" style="display:none; color:white; padding:10px;">
+    <img id="infoImg" src="" style="width:100%; border-radius:6px; margin-bottom:10px;">
+    <div id="infoText" style="font-size:13px; line-height:1.4;"></div>
+  </div>
+
   <div id="tooltip"></div>
 </div>
 
@@ -163,6 +50,7 @@ button:hover {
   <div class="control-group">
     <div class="group-label">ANALYSIS</div>
     <div class="group-row">
+      <button onclick="showInfo()">ℹ️ Info</button>
       <button onclick="showDensityPlot()">📊 Density</button>
       <button onclick="alert('TBD feature')">🧪 TBD</button>
     </div>
@@ -184,6 +72,16 @@ L.tileLayer(
 // ================= STATE =================
 let currentLayout = [];
 let currentCenter = [0,0];
+let currentTelescope = null;
+
+// ================= WIKIPEDIA MAPPING =================
+const wikiPages = {
+  vla: "Very_Large_Array",
+  lofar: "Low-Frequency_Array",
+  meerkat: "MeerKAT",
+  skalow: "Square_Kilometre_Array",
+  alma: "Atacama_Large_Millimeter_Array"
+};
 
 // ================= FILE LOADERS =================
 async function loadPosition(file) {
@@ -235,6 +133,9 @@ function clearAntennas(){
 // ================= MAIN =================
 async function loadTelescope(name){
 
+  currentTelescope = name;
+
+  closeInset(); // close inset plot when you click on another layout
   clearAntennas();
 
   const pos = await loadPosition(`data/position_${name}.txt`);
@@ -264,6 +165,8 @@ async function loadTelescope(name){
 
 // ================= DENSITY PLOT =================
 function showDensityPlot(){
+  document.getElementById("infoPanel").style.display = "none";
+  document.getElementById("plot").style.display = "block";
 
   const c = document.getElementById("plot");
   const ctx = c.getContext("2d");
@@ -289,103 +192,81 @@ function showDensityPlot(){
 
   ctx.clearRect(0,0,W,H);
 
-  // margins
   const m = {l:55,r:15,t:15,b:45};
-
   const pw = W - m.l - m.r;
   const ph = H - m.t - m.b;
 
-  // ================= AXES =================
   ctx.strokeStyle = "#aaa";
-  ctx.lineWidth = 1;
 
-  // X axis
   ctx.beginPath();
   ctx.moveTo(m.l, H - m.b);
   ctx.lineTo(W - m.r, H - m.b);
   ctx.stroke();
 
-  // Y axis
   ctx.beginPath();
   ctx.moveTo(m.l, m.t);
   ctx.lineTo(m.l, H - m.b);
   ctx.stroke();
 
-  // ================= BARS =================
   ctx.fillStyle = "lime";
   const bw = pw / bins;
 
   hist.forEach((v,i)=>{
     const h = (v / maxC) * ph;
-
-    ctx.fillRect(
-      m.l + i*bw,
-      H - m.b - h,
-      bw - 2,
-      h
-    );
+    ctx.fillRect(m.l + i*bw, H - m.b - h, bw - 2, h);
   });
-
-  // ================= TICKS =================
-  ctx.fillStyle = "#ccc";
-  ctx.font = "10px sans-serif";
-
-  // X ticks (radius in meters)
-  for (let i = 0; i <= 5; i++) {
-    const xVal = (i/5) * maxR;
-    const x = m.l + (i/5) * pw;
-
-    ctx.beginPath();
-    ctx.moveTo(x, H - m.b);
-    ctx.lineTo(x, H - m.b + 5);
-    ctx.strokeStyle = "#888";
-    ctx.stroke();
-
-    ctx.fillText(
-      Math.round(xVal),
-      x - 10,
-      H - m.b + 18
-    );
-  }
-
-  // Y ticks (counts)
-  for (let i = 0; i <= 5; i++) {
-    const yVal = (i/5) * maxC;
-    const y = H - m.b - (i/5) * ph;
-
-    ctx.beginPath();
-    ctx.moveTo(m.l - 8, y);
-    ctx.lineTo(m.l, y);
-    ctx.stroke();
-
-    ctx.fillText(
-      Math.round(yVal),
-      25,
-      y + 3
-    );
-  }
-
-  // ================= LABELS =================
-  ctx.fillStyle = "#fff";
-  ctx.font = "12px sans-serif";
-
-  // X label
-  ctx.fillText(
-    "Radius (m)",
-    W/2 - 40,
-    H - 5
-  );
-
-  // Y label (rotated)
-  ctx.save();
-  ctx.translate(8, H/2 + 40);
-  ctx.rotate(-Math.PI/2);
-  ctx.fillText("Number of antennas", 0, 0);
-  ctx.restore();
 
   document.getElementById("inset").style.display = "block";
 }
 
+// ================= WIKIPEDIA INFO =================
+async function showInfo(){
+
+  if (!currentTelescope) return;
+
+  const inset = document.getElementById("inset");
+  const infoPanel = document.getElementById("infoPanel");
+  const plot = document.getElementById("plot");
+
+  plot.style.display = "none";
+  infoPanel.style.display = "block";
+
+  const page = wikiPages[currentTelescope];
+  const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${page}`;
+
+  infoPanel.style.height = "auto";
+
+  document.getElementById("infoText").innerText = "Loading...";
+
+  inset.style.display = "block";
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+
+    document.getElementById("infoImg").src = data.thumbnail ? data.thumbnail.source : "";
+
+    document.getElementById("infoText").innerHTML = `
+      <b>${data.title}</b><br/><br/>
+      ${data.extract}<br/><br/>
+      <a href="https://en.wikipedia.org/wiki/${page}" target="_blank" style="color:lightblue;">
+        Read more on Wikipedia →
+      </a>
+    `;
+
+    // apparently you need to wait for layout to render, then resize inset
+    requestAnimationFrame(() => {
+      const rect = infoPanel.getBoundingClientRect();
+      inset.style.height = rect.height + 20 + "px"; // padding buffer
+    });
+
+  } catch (e) {
+    document.getElementById("infoText").innerText =
+      "Failed to load Wikipedia data.";
+  }
+
+  inset.style.display = "block";
+}
 // ================= INSET =================
 function closeInset(){
   document.getElementById("inset").style.display="none";
