@@ -165,6 +165,7 @@ async function loadTelescope(name){
 
 // ================= DENSITY PLOT =================
 function showDensityPlot(){
+
   document.getElementById("infoPanel").style.display = "none";
   document.getElementById("plot").style.display = "block";
 
@@ -190,24 +191,33 @@ function showDensityPlot(){
 
   const maxC = Math.max(...hist);
 
+  // ================= CLEAR =================
   ctx.clearRect(0,0,W,H);
 
-  const m = {l:55,r:15,t:15,b:45};
+  // ================= LAYOUT =================
+  const m = {l:60,r:20,t:20,b:50};
   const pw = W - m.l - m.r;
   const ph = H - m.t - m.b;
 
+  // ================= STYLE RESET (IMPORTANT) =================
+  ctx.lineWidth = 1;
+
+  // ================= AXES =================
   ctx.strokeStyle = "#aaa";
 
+  // X axis
   ctx.beginPath();
   ctx.moveTo(m.l, H - m.b);
   ctx.lineTo(W - m.r, H - m.b);
   ctx.stroke();
 
+  // Y axis
   ctx.beginPath();
   ctx.moveTo(m.l, m.t);
   ctx.lineTo(m.l, H - m.b);
   ctx.stroke();
 
+  // ================= BARS =================
   ctx.fillStyle = "lime";
   const bw = pw / bins;
 
@@ -215,6 +225,59 @@ function showDensityPlot(){
     const h = (v / maxC) * ph;
     ctx.fillRect(m.l + i*bw, H - m.b - h, bw - 2, h);
   });
+
+  // ================= TICKS =================
+  ctx.strokeStyle = "#888";
+  ctx.fillStyle = "#ccc";
+  ctx.font = "11px sans-serif";
+
+  // X ticks (meters)
+  for (let i = 0; i <= 5; i++) {
+    const xVal = (i/5) * maxR;
+    const x = m.l + (i/5) * pw;
+
+    ctx.beginPath();
+    ctx.moveTo(x, H - m.b);
+    ctx.lineTo(x, H - m.b + 6);
+    ctx.stroke();
+
+    ctx.fillText(
+      Math.round(xVal),
+      x - 10,
+      H - m.b + 18
+    );
+  }
+
+  // Y ticks (counts)
+  for (let i = 0; i <= 5; i++) {
+    const yVal = (i/5) * maxC;
+    const y = H - m.b - (i/5) * ph;
+
+    ctx.beginPath();
+    ctx.moveTo(m.l - 6, y);
+    ctx.lineTo(m.l, y);
+    ctx.stroke();
+
+    ctx.fillText(
+      Math.round(yVal),
+      10,
+      y + 3
+    );
+  }
+
+  // ================= LABELS =================
+  ctx.fillStyle = "#fff";
+  ctx.font = "13px sans-serif";
+
+  // X label
+  ctx.fillText("Radius (m)", W/2 - 40, H - 10);
+
+  // Y label
+  ctx.save();
+  ctx.translate(15, H/2 + 30);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText("Number of antennas", 0, 0);
+  ctx.restore();
 
   document.getElementById("inset").style.display = "block";
 }
