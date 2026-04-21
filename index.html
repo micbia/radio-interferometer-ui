@@ -42,6 +42,8 @@
       <button onclick="loadTelescope('meerkat')">MeerKAT 🇿🇦</button>
       <button onclick="loadTelescope('skalow')">SKA-Low 🇦🇺</button>
       <button onclick="loadTelescope('alma')">ALMA 🇨🇱</button>
+      <button onclick="loadTelescope('lovell')">LOVELL 🇬🇧</button>
+      <button onclick="loadTelescope('gmrt')">GMRT 🇮🇳</button>
     </div>
   </div>
 
@@ -52,6 +54,7 @@
     <div class="group-row">
       <button onclick="showInfo()">ℹ️ Info</button>
       <button onclick="showDensityPlot()">📊 Density</button>
+      <button onclick="openTelescopeWebsite()">🌐 Official Site</button>
       <button onclick="alert('TBD feature')">🧪 TBD</button>
     </div>
   </div>
@@ -80,7 +83,10 @@ const wikiPages = {
   lofar: "Low-Frequency_Array",
   meerkat: "MeerKAT",
   skalow: "Square_Kilometre_Array",
-  alma: "Atacama_Large_Millimeter_Array"
+  alma: "Atacama_Large_Millimeter_Array",
+  lovell: "Lovell_Telescope",
+  gmrt: "Giant_Metrewave_Radio_Telescope"
+  //merlin: "MERLIN"
 };
 
 // ================= FILE LOADERS =================
@@ -146,10 +152,8 @@ async function loadTelescope(name){
 
   flyTo([20,0],2.5,()=>{
     flyTo(pos,15,()=>{
-
       layout.forEach(p=>{
         const [lat,lon] = enuToLatLng(pos[0],pos[1],p[0],p[1]);
-
         L.circleMarker([lat,lon],{
           radius:4,
           color:"lime",
@@ -199,7 +203,7 @@ function showDensityPlot(){
   const pw = W - m.l - m.r;
   const ph = H - m.t - m.b;
 
-  // ================= STYLE RESET (IMPORTANT) =================
+  // ================= STYLE RESET =================
   ctx.lineWidth = 1;
 
   // ================= AXES =================
@@ -333,6 +337,31 @@ async function showInfo(){
 // ================= INSET =================
 function closeInset(){
   document.getElementById("inset").style.display="none";
+}
+
+// ================= REDIRECT TO OFFICIAL WEBPAGE =================
+
+const telescopeWebsites = {
+  vla: "https://public.nrao.edu/telescopes/vla/",
+  lofar: "https://www.astron.nl/telescopes/lofar/",
+  meerkat: "https://www.sarao.ac.za/science-engineering/meerkat/",
+  skalow: "https://www.skao.int/en/explore/telescopes/ska-low/",
+  alma: "https://www.almaobservatory.org/",
+  lovell: "https://www.jb.man.ac.uk/aboutus/lovell/",
+  gmrt: "https://www.gmrt.ncra.tifr.res.in/gmrt/gmrt.html"
+};
+
+function openTelescopeWebsite(){
+
+  if (!currentTelescope) return;
+
+  const url = telescopeWebsites[currentTelescope];
+
+  if (url) {
+    window.open(url, "_blank");
+  } else {
+    alert("No official website defined for this telescope.");
+  }
 }
 </script>
 
